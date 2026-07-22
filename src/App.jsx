@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
   ShoppingCart, Package, LayoutDashboard, History, Settings, Users, LogOut, 
   Search, Plus, Minus, Trash2, Edit2, Check, X, Truck, Store, Download, 
-  AlertTriangle, Wand2, ImagePlus, Save, TrendingUp, Cloud
+  AlertTriangle, ImagePlus, Save, TrendingUp, Cloud, Droplet
 } from 'lucide-react';
 
 const DEFAULT_PRICES = {
@@ -31,6 +31,14 @@ const getProductVariants = (item) => {
   return [];
 };
 
+const getRecipeForVariant = (sizeName) => {
+  const s = sizeName.toLowerCase();
+  if (s.includes('30ml')) return { alcohol: 20, fijador: 1, esencia: 9 };
+  if (s.includes('50ml')) return { alcohol: 35, fijador: 2, esencia: 13 };
+  if (s.includes('100ml')) return { alcohol: 70, fijador: 4, esencia: 26 };
+  return { alcohol: 0, fijador: 0, esencia: 0 };
+};
+
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
@@ -55,6 +63,7 @@ export default function App() {
   const [prices, setPrices] = useState(DEFAULT_PRICES);
   const [sales, setSales] = useState([]);
   const [customers, setCustomers] = useState([]);
+  const [globalMaterials, setGlobalMaterials] = useState({ alcohol: 0, fijador: 0 });
 
   useEffect(() => {
     localStorage.setItem('saas_users_db', JSON.stringify(registeredUsers));
@@ -69,8 +78,9 @@ export default function App() {
       localStorage.setItem(prefix + 'prices', JSON.stringify(prices));
       localStorage.setItem(prefix + 'appName', appName);
       localStorage.setItem(prefix + 'appLogo', appLogo);
+      localStorage.setItem(prefix + 'globalMaterials', JSON.stringify(globalMaterials));
     }
-  }, [inventory, sales, customers, prices, appName, appLogo, isLoggedIn, currentUser]);
+  }, [inventory, sales, customers, prices, appName, appLogo, globalMaterials, isLoggedIn, currentUser]);
 
   const showNotification = (msg) => {
     setNotification(msg);
@@ -89,10 +99,11 @@ export default function App() {
       const defaultInv = Array.from({length: 10}, (_, i) => ({
         id: `aroma_${i+1}`,
         name: `Producto de Prueba ${String(i+1).padStart(2, '0')}`,
+        esencia: 1000,
         variants: [
-          { name: '30ml', stock: 25, cost: 2, price: 6 },
-          { name: '50ml', stock: 25, cost: 3.5, price: 10 },
-          { name: '100ml', stock: 25, cost: 7.5, price: 20 }
+          { name: '30ml', stock: 25, cost: 2, price: 6, recipe: { alcohol: 20, fijador: 1, esencia: 9 } },
+          { name: '50ml', stock: 25, cost: 3.5, price: 10, recipe: { alcohol: 35, fijador: 2, esencia: 13 } },
+          { name: '100ml', stock: 25, cost: 7.5, price: 20, recipe: { alcohol: 70, fijador: 4, esencia: 26 } }
         ]
       }));
       setInventory(defaultInv);
@@ -101,6 +112,7 @@ export default function App() {
       setAppLogo("https://placehold.co/400x400/000000/FFC107?text=Tu+Logo");
       setSales([]);
       setCustomers([]);
+      setGlobalMaterials({ alcohol: 5000, fijador: 500 });
     } else {
       const sInv = localStorage.getItem(prefix + 'inventory');
       setInventory(sInv ? JSON.parse(sInv) : []);
@@ -114,6 +126,8 @@ export default function App() {
       setAppName(sName ? sName : "Tu Negocio Aquí");
       const sLogo = localStorage.getItem(prefix + 'appLogo');
       setAppLogo(sLogo ? sLogo : "https://placehold.co/400x400/000000/FFC107?text=Tu+Logo");
+      const sMat = localStorage.getItem(prefix + 'globalMaterials');
+      setGlobalMaterials(sMat ? JSON.parse(sMat) : { alcohol: 0, fijador: 0 });
     }
   };
 
@@ -176,8 +190,6 @@ export default function App() {
   const [posCurrentItem, setPosCurrentItem] = useState({ aromaId: '', size: '', qty: 1, priceOverride: '' });
   const [posDiscount, setPosDiscount] = useState(0);
   const [posShipping, setPosShipping] = useState(prices.shipping);
-  const [posAiText, setPosAiText] = useState('');
-  const [isAiLoading, setIsAiLoading] = useState(false);
   const [searchCustomer, setSearchCustomer] = useState('');
   const [showCustomerSuggestions, setShowCustomerSuggestions] = useState(false);
   const [posProductSearch, setPosProductSearch] = useState('');
@@ -210,8 +222,9 @@ export default function App() {
       setEditingProduct({
         id: `prod_${Date.now()}`,
         name: '',
+        esencia: 0,
         variants: [
-          { name: 'Presentación 1', stock: 0, cost: 0, price: 0 }
+          { name: 'Nueva Presentación', stock: 0, cost: 0, price: 0, recipe: { alcohol: 0, fijador: 0, esencia: 0 } }
         ]
       });
     }
@@ -257,6 +270,10 @@ export default function App() {
     showNotification('Producto eliminado de forma segura');
   };
 
+  const handleSaveInventory = () => {
+    showNotification('Cambios en el inventario guardados');
+  };
+
   const handleSaveCustomer = () => {
     if (!newCustomer.name || !newCustomer.whatsapp) return showError('Nombre y WhatsApp son obligatorios');
     if (editingCustomerId) {
@@ -287,71 +304,6 @@ export default function App() {
     setPosCustomer({ id: c.id, name: c.name, whatsapp: c.whatsapp, address: c.address, origin: c.origin || 'Local' });
     setSearchCustomer(c.name);
     setShowCustomerSuggestions(false);
-  };
-
-  const handleAiExtract = async () => {
-    if (!posAiText.trim()) return;
-    setIsAiLoading(true);
-    showNotification('Analizando pedido con IA...');
-
-    try {
-      const inventoryContext = inventory.map(i => `${i.id}: ${i.name} (Presentaciones: ${getProductVariants(i).map(v=>v.name).join(', ')})`).join(' | ');
-      const systemPrompt = `Eres un asistente de ventas. Extrae datos estructurados de pedidos.
-      El inventario y sus presentaciones exactas es: [${inventoryContext}].
-      1. Extrae nombre del cliente. Si no dice, pon "Cliente IA".
-      2. WhatsApp.
-      3. Dirección.
-      4. aromaId (el ID exacto del inventario).
-      5. size (El nombre de la presentación. Usa exactamente los nombres de las presentaciones disponibles para ese ID).
-      6. qty (número). Defecto 1.`;
-
-      const payload = {
-        contents: [{ role: 'user', parts: [{ text: posAiText }] }],
-        systemInstruction: { parts: [{ text: systemPrompt }] },
-        generationConfig: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: "OBJECT",
-            properties: {
-              customer: { type: "OBJECT", properties: { name: { type: "STRING" }, whatsapp: { type: "STRING" }, address: { type: "STRING" } } },
-              items: { type: "ARRAY", items: { type: "OBJECT", properties: { aromaId: { type: "STRING" }, size: { type: "STRING" }, qty: { type: "NUMBER" } } } }
-            }
-          }
-        }
-      };
-
-      const apiKey = ""; // Canvas Inject
-      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
-
-      const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-      const result = await response.json();
-      const jsonText = result?.candidates?.[0]?.content?.parts?.[0]?.text;
-
-      if (jsonText) {
-        const parsedData = JSON.parse(jsonText);
-        if (parsedData.customer) {
-          setPosCustomer(prev => ({ ...prev, ...parsedData.customer, origin: 'Publicidad' }));
-          setSearchCustomer(parsedData.customer.name || '');
-        }
-        if (parsedData.items && parsedData.items.length > 0) {
-          const newCartItems = parsedData.items.map(item => {
-            const realAroma = inventory.find(i => i.id === item.aromaId) || inventory[0];
-            const vars = getProductVariants(realAroma);
-            const realVariant = vars.find(v => v.name.toLowerCase() === (item.size || '').toLowerCase()) || vars[0];
-            return {
-              id: `cart_${Date.now()}_${Math.random().toString(36).substring(7)}`,
-              aromaId: realAroma.id, aromaName: realAroma.name, size: realVariant.name, qty: item.qty || 1,
-              price: realVariant.price
-            };
-          });
-          setPosCart(prev => [...prev, ...newCartItems]);
-        }
-        setPosAiText('');
-        showNotification('¡Datos extraídos con éxito!');
-      } else throw new Error("Sin respuesta");
-    } catch (error) {
-      showError('Error al analizar texto.');
-    } finally { setIsAiLoading(false); }
   };
 
   const addToCart = () => {
@@ -394,16 +346,32 @@ export default function App() {
 
     setSales(prev => [saleRecord, ...prev]);
 
+    let totalAlcoholDeduction = 0;
+    let totalFijadorDeduction = 0;
+
     setInventory(prev => prev.map(invItem => {
       const cartItemsForThis = posCart.filter(c => c.aromaId === invItem.id);
       if (cartItemsForThis.length === 0) return invItem;
       
       const newVars = [...invItem.variants];
+      let esenciaDeduction = 0;
+
       cartItemsForThis.forEach(cartItem => {
         const vIndex = newVars.findIndex(v => v.name === cartItem.size);
-        if (vIndex > -1) newVars[vIndex].stock = Math.max(0, newVars[vIndex].stock - cartItem.qty);
+        if (vIndex > -1) {
+          newVars[vIndex].stock = Math.max(0, newVars[vIndex].stock - cartItem.qty);
+          const recipe = newVars[vIndex].recipe || getRecipeForVariant(cartItem.size);
+          totalAlcoholDeduction += ((recipe.alcohol || 0) * cartItem.qty);
+          totalFijadorDeduction += ((recipe.fijador || 0) * cartItem.qty);
+          esenciaDeduction += ((recipe.esencia || 0) * cartItem.qty);
+        }
       });
-      return { ...invItem, variants: newVars };
+      return { ...invItem, variants: newVars, esencia: Math.max(0, (invItem.esencia || 0) - esenciaDeduction) };
+    }));
+
+    setGlobalMaterials(prev => ({
+      alcohol: Math.max(0, prev.alcohol - totalAlcoholDeduction),
+      fijador: Math.max(0, prev.fijador - totalFijadorDeduction)
     }));
 
     setCustomers(prev => {
@@ -628,14 +596,6 @@ export default function App() {
     return (
       <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div className="lg:col-span-4 space-y-6">
-          <div className="bg-gray-50 border border-gray-200 p-5 rounded-xl shadow-sm">
-            <h3 className="font-black text-gray-900 mb-3 flex items-center"><Wand2 size={18} className="mr-2 text-amber-500"/> Asistente IA</h3>
-            <textarea value={posAiText} onChange={e => setPosAiText(e.target.value)} className="w-full p-3 rounded-lg text-sm border border-gray-300 outline-none focus:ring-2 focus:ring-amber-400 h-24 resize-none mb-3" placeholder="Pega el mensaje del cliente aquí..." disabled={isAiLoading} />
-            <button onClick={handleAiExtract} disabled={isAiLoading || !posAiText.trim()} className={`w-full font-bold py-3 rounded-lg flex justify-center items-center shadow-md ${isAiLoading ? 'bg-gray-300 text-gray-500' : 'bg-black text-amber-400'}`}>
-              {isAiLoading ? "Procesando..." : "Extraer Datos"}
-            </button>
-          </div>
-
           <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200">
             <h3 className="font-black text-gray-900 mb-4 border-b border-gray-100 pb-3 flex items-center"><Users size={18} className="mr-2 text-gray-400"/> Datos del Cliente</h3>
             <div className="space-y-4">
@@ -748,39 +708,65 @@ export default function App() {
       inventory.forEach(item => {
          const vars = getProductVariants(item);
          vars.forEach(v => {
-            rows.push(`"${item.name}","${v.name}",${v.stock},${v.cost},${v.price}`);
+            rows.push(`"${item.name}","${item.esencia || 0}","${v.name}",${v.stock},${v.cost},${v.price},${v.recipe?.alcohol||0},${v.recipe?.fijador||0},${v.recipe?.esencia||0}`);
          });
       });
-      const csvContent = "data:text/csv;charset=utf-8,Producto,Presentacion,Stock,Costo,Precio\n" + rows.join("\n");
-      const link = document.createElement("a"); link.setAttribute("href", encodeURI(csvContent)); link.setAttribute("download", "inventario.csv"); document.body.appendChild(link); link.click();
+      const csvContent = "data:text/csv;charset=utf-8,Producto,Esencia Disponible(ml),Presentacion,Stock Físico,Costo,Precio,Usa Alcohol(ml),Usa Fijador(ml),Usa Esencia(ml)\n" + rows.join("\n");
+      const link = document.createElement("a"); link.setAttribute("href", encodeURI(csvContent)); link.setAttribute("download", "inventario_y_recetas.csv"); document.body.appendChild(link); link.click();
     };
 
     return (
       <div className="max-w-6xl mx-auto space-y-6 relative">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <h2 className="text-2xl font-black text-gray-900 tracking-tight">Catálogo e Inventario</h2>
+          <h2 className="text-2xl font-black text-gray-900 tracking-tight">Inventario y Formulación</h2>
           <div className="flex flex-wrap items-center gap-3">
             <label className="flex items-center space-x-2 text-sm font-bold bg-white p-2.5 rounded-lg border cursor-pointer"><input type="checkbox" checked={invFilterLowStock} onChange={e => setInvFilterLowStock(e.target.checked)} className="rounded text-amber-500 w-4 h-4" /><span>Alerta de Stock</span></label>
             <button onClick={downloadInventoryCSV} className="bg-gray-800 text-white px-4 py-2.5 rounded-lg font-bold flex items-center gap-2 text-sm"><Download size={16}/> Exportar Excel</button>
             <button onClick={() => openProductModal()} className="bg-amber-400 text-black px-4 py-2.5 rounded-lg font-black flex items-center gap-2 text-sm"><Plus size={16}/> Añadir Producto</button>
+            <button onClick={handleSaveInventory} className="bg-black text-amber-400 px-4 py-2.5 rounded-lg font-black flex items-center gap-2 text-sm"><Save size={16}/> Guardar Cambios</button>
+          </div>
+        </div>
+
+        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex flex-col md:flex-row gap-6 mb-4">
+          <div className="flex items-center gap-3 flex-1">
+            <div className="bg-blue-100 p-3 rounded-full"><Droplet className="text-blue-600" size={24}/></div>
+            <div className="flex-1">
+              <label className="text-xs font-bold text-gray-500 uppercase">Alcohol Global Disponible (ml)</label>
+              <input type="number" value={globalMaterials.alcohol} onChange={e => setGlobalMaterials({...globalMaterials, alcohol: parseFloat(e.target.value)||0})} className="block w-full font-black text-xl outline-none bg-transparent border-b border-gray-200 focus:border-blue-500"/>
+            </div>
+          </div>
+          <div className="flex items-center gap-3 flex-1">
+            <div className="bg-purple-100 p-3 rounded-full"><Droplet className="text-purple-600" size={24}/></div>
+            <div className="flex-1">
+              <label className="text-xs font-bold text-gray-500 uppercase">Fijador Global Disponible (ml)</label>
+              <input type="number" value={globalMaterials.fijador} onChange={e => setGlobalMaterials({...globalMaterials, fijador: parseFloat(e.target.value)||0})} className="block w-full font-black text-xl outline-none bg-transparent border-b border-gray-200 focus:border-purple-500"/>
+            </div>
           </div>
         </div>
 
         {showProductModal && (
           <div className="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
-              <div className="p-5 border-b bg-gray-50 flex justify-between items-center"><h3 className="font-black text-lg">Configurar Producto (SaaS)</h3><button onClick={() => setShowProductModal(false)} className="p-2 hover:bg-gray-200 rounded-full"><X size={20}/></button></div>
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+              <div className="p-5 border-b bg-gray-50 flex justify-between items-center"><h3 className="font-black text-lg">Configurar Producto y Receta</h3><button onClick={() => setShowProductModal(false)} className="p-2 hover:bg-gray-200 rounded-full"><X size={20}/></button></div>
               <div className="p-6 overflow-y-auto space-y-6">
-                <div><label className="block text-xs font-bold uppercase mb-2 text-gray-500">Nombre del Producto</label><input type="text" value={editingProduct.name} onChange={e => setEditingProduct({...editingProduct, name: e.target.value})} placeholder="Ej: Crema Hidratante, Perfume 05..." className="w-full p-4 bg-gray-50 border border-gray-200 rounded-xl font-black text-gray-800 outline-none focus:ring-2 focus:ring-amber-400" /></div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div><label className="block text-xs font-bold uppercase mb-2 text-gray-500">Nombre del Producto</label><input type="text" value={editingProduct.name} onChange={e => setEditingProduct({...editingProduct, name: e.target.value})} placeholder="Ej: Perfume 05, Crema..." className="w-full p-4 bg-gray-50 border border-gray-200 rounded-xl font-black text-gray-800 outline-none focus:ring-2 focus:ring-amber-400" /></div>
+                  <div><label className="block text-xs font-bold uppercase mb-2 text-gray-500">Esencia Exclusiva Disponible (ml)</label><input type="number" value={editingProduct.esencia || 0} onChange={e => setEditingProduct({...editingProduct, esencia: parseFloat(e.target.value)||0})} className="w-full p-4 bg-gray-50 border border-gray-200 rounded-xl font-black text-amber-600 outline-none focus:ring-2 focus:ring-amber-400" /></div>
+                </div>
                 
                 <div className="space-y-3">
-                  <div className="flex justify-between items-center"><label className="block text-xs font-bold uppercase text-gray-500">Presentaciones y Precios</label><button onClick={() => setEditingProduct({...editingProduct, variants: [...editingProduct.variants, {name: 'Nueva', stock: 0, cost: 0, price: 0}]})} className="text-xs font-black text-amber-600 bg-amber-50 px-3 py-1.5 rounded-lg border border-amber-200 hover:bg-amber-100">+ Añadir Presentación</button></div>
+                  <div className="flex justify-between items-center"><label className="block text-xs font-bold uppercase text-gray-500">Presentaciones y Formulación (Receta por unidad)</label><button onClick={() => setEditingProduct({...editingProduct, variants: [...editingProduct.variants, {name: 'Nueva', stock: 0, cost: 0, price: 0, recipe: {alcohol:0, fijador:0, esencia:0}}]})} className="text-xs font-black text-amber-600 bg-amber-50 px-3 py-1.5 rounded-lg border border-amber-200 hover:bg-amber-100">+ Añadir Presentación</button></div>
                   {editingProduct.variants.map((v, idx) => (
-                    <div key={idx} className="bg-white p-4 rounded-xl border border-gray-200 grid grid-cols-1 md:grid-cols-12 gap-3 items-center relative group">
-                      <div className="md:col-span-4"><label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Nombre (Ej: 30ml, 200lb)</label><input type="text" value={v.name} onChange={e => { const newVars = [...editingProduct.variants]; newVars[idx].name = e.target.value; setEditingProduct({...editingProduct, variants: newVars}); }} className="w-full p-2.5 bg-gray-50 border rounded-lg font-bold outline-none" /></div>
-                      <div className="md:col-span-2"><label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Unidades</label><input type="number" value={v.stock} onChange={e => { const newVars = [...editingProduct.variants]; newVars[idx].stock = parseInt(e.target.value)||0; setEditingProduct({...editingProduct, variants: newVars}); }} className="w-full p-2.5 bg-gray-50 border rounded-lg font-black text-center outline-none" /></div>
-                      <div className="md:col-span-3"><label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Costo ($)</label><input type="number" step="0.01" value={v.cost} onChange={e => { const newVars = [...editingProduct.variants]; newVars[idx].cost = parseFloat(e.target.value)||0; setEditingProduct({...editingProduct, variants: newVars}); }} className="w-full p-2.5 bg-gray-50 border rounded-lg font-bold text-center outline-none" /></div>
-                      <div className="md:col-span-3"><label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">P.V.P ($)</label><input type="number" step="0.01" value={v.price} onChange={e => { const newVars = [...editingProduct.variants]; newVars[idx].price = parseFloat(e.target.value)||0; setEditingProduct({...editingProduct, variants: newVars}); }} className="w-full p-2.5 bg-gray-50 border rounded-lg font-black text-amber-600 text-center outline-none" /></div>
+                    <div key={idx} className="bg-white p-4 rounded-xl border border-gray-200 grid grid-cols-1 md:grid-cols-12 gap-3 items-end relative group shadow-sm">
+                      <div className="md:col-span-3"><label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Nombre (Ej: 30ml)</label><input type="text" value={v.name} onChange={e => { const newVars = [...editingProduct.variants]; newVars[idx].name = e.target.value; if(!v.recipe) newVars[idx].recipe = getRecipeForVariant(e.target.value); setEditingProduct({...editingProduct, variants: newVars}); }} className="w-full p-2.5 bg-gray-50 border rounded-lg font-bold outline-none" /></div>
+                      <div className="md:col-span-2"><label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Stock Físico</label><input type="number" value={v.stock} onChange={e => { const newVars = [...editingProduct.variants]; newVars[idx].stock = parseInt(e.target.value)||0; setEditingProduct({...editingProduct, variants: newVars}); }} className="w-full p-2.5 bg-gray-50 border rounded-lg font-black text-center outline-none" /></div>
+                      <div className="md:col-span-2"><label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">P.V.P ($)</label><input type="number" step="0.01" value={v.price} onChange={e => { const newVars = [...editingProduct.variants]; newVars[idx].price = parseFloat(e.target.value)||0; setEditingProduct({...editingProduct, variants: newVars}); }} className="w-full p-2.5 bg-gray-50 border rounded-lg font-black text-amber-600 text-center outline-none" /></div>
+                      <div className="md:col-span-5 bg-gray-50 p-2 rounded-lg border border-gray-200 grid grid-cols-3 gap-2">
+                         <div className="col-span-3 text-[9px] font-black uppercase text-gray-400 text-center mb-1">Fórmula (Descuento automático)</div>
+                         <div><label className="block text-[9px] font-bold uppercase text-gray-500 mb-1 text-center">Alcohol</label><input type="number" value={v.recipe?.alcohol||0} onChange={e => { const newVars = [...editingProduct.variants]; newVars[idx].recipe = {...newVars[idx].recipe, alcohol: parseFloat(e.target.value)||0}; setEditingProduct({...editingProduct, variants: newVars}); }} className="w-full p-1 border rounded text-center text-xs font-bold outline-none" title="ml de alcohol"/></div>
+                         <div><label className="block text-[9px] font-bold uppercase text-gray-500 mb-1 text-center">Fijador</label><input type="number" value={v.recipe?.fijador||0} onChange={e => { const newVars = [...editingProduct.variants]; newVars[idx].recipe = {...newVars[idx].recipe, fijador: parseFloat(e.target.value)||0}; setEditingProduct({...editingProduct, variants: newVars}); }} className="w-full p-1 border rounded text-center text-xs font-bold outline-none" title="ml de fijador"/></div>
+                         <div><label className="block text-[9px] font-bold uppercase text-gray-500 mb-1 text-center">Esencia</label><input type="number" value={v.recipe?.esencia||0} onChange={e => { const newVars = [...editingProduct.variants]; newVars[idx].recipe = {...newVars[idx].recipe, esencia: parseFloat(e.target.value)||0}; setEditingProduct({...editingProduct, variants: newVars}); }} className="w-full p-1 border rounded text-center text-xs font-bold outline-none text-amber-600" title="ml de esencia"/></div>
+                      </div>
                       <button onClick={() => { const newVars = editingProduct.variants.filter((_, i) => i !== idx); setEditingProduct({...editingProduct, variants: newVars}); }} className="absolute -top-2 -right-2 bg-red-100 text-red-600 p-1.5 rounded-full shadow-sm md:opacity-0 group-hover:opacity-100 transition"><X size={14}/></button>
                     </div>
                   ))}
@@ -794,7 +780,7 @@ export default function App() {
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 text-gray-500 border-b">
-              <tr><th className="p-4 text-left font-bold uppercase text-xs w-1/4">Producto</th><th className="p-4 text-left font-bold uppercase text-xs">Presentaciones / Stock (Clic para editar)</th><th className="p-4 text-center font-bold uppercase text-xs w-24">Acciones</th></tr>
+              <tr><th className="p-4 text-left font-bold uppercase text-xs w-1/4">Producto / Esencia Base</th><th className="p-4 text-left font-bold uppercase text-xs">Presentaciones / Stock (Clic para editar)</th><th className="p-4 text-center font-bold uppercase text-xs w-24">Acciones</th></tr>
             </thead>
             <tbody>
               {inventory.filter(item => {
@@ -803,14 +789,14 @@ export default function App() {
                 return vars.some(v => v.stock <= (prices.lowStockThreshold || 0));
               }).map(item => (
                 <tr key={item.id} className="border-b border-gray-50 hover:bg-gray-50/50">
-                  <td className="p-4"><span className="font-black text-gray-800 block text-base">{item.name}</span></td>
+                  <td className="p-4"><span className="font-black text-gray-800 block text-base">{item.name}</span><span className="text-xs font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded mt-1 inline-block">Esencia: {item.esencia || 0} ml</span></td>
                   <td className="p-4">
                     <div className="flex flex-wrap gap-2">
                       {getProductVariants(item).map((v, idx) => {
                         const isLow = v.stock <= (prices.lowStockThreshold || 0);
                         return (
-                          <div key={idx} className={`flex items-center gap-1 border p-1 rounded-lg ${isLow ? 'bg-red-50 border-red-200' : 'bg-white border-gray-200 shadow-sm'}`}>
-                            <span className="text-[11px] font-black w-14 truncate uppercase text-gray-500 pl-1">{v.name}:</span>
+                          <div key={idx} className={`flex items-center gap-1 border p-1 rounded-lg ${isLow ? 'bg-red-50 border-red-200' : 'bg-white border-gray-200 shadow-sm'}`} title={`Fórmula: ${v.recipe?.alcohol||0} A, ${v.recipe?.fijador||0} F, ${v.recipe?.esencia||0} E`}>
+                            <span className="text-[11px] font-black w-16 truncate uppercase text-gray-500 pl-1">{v.name}:</span>
                             <button onClick={() => updateInventoryStock(item.id, v.name, -1)} className="p-1.5 bg-gray-100 rounded hover:bg-gray-200 text-gray-600"><Minus size={12}/></button>
                             <input type="number" value={v.stock} onChange={(e) => handleDirectStockChange(item.id, v.name, parseInt(e.target.value)||0)} className={`w-12 text-center text-sm font-black bg-transparent outline-none ${isLow ? 'text-red-600' : 'text-gray-900'}`} />
                             <button onClick={() => updateInventoryStock(item.id, v.name, 1)} className="p-1.5 bg-gray-100 rounded hover:bg-gray-200 text-gray-600"><Plus size={12}/></button>
@@ -821,7 +807,7 @@ export default function App() {
                   </td>
                   <td className="p-4 text-center">
                     <div className="flex justify-center items-center gap-2">
-                      <button onClick={() => openProductModal(item)} className="p-2 bg-amber-50 text-amber-700 rounded-lg hover:bg-amber-400 hover:text-black transition" title="Editar configuraciones avanzadas"><Edit2 size={16}/></button>
+                      <button onClick={() => openProductModal(item)} className="p-2 bg-amber-50 text-amber-700 rounded-lg hover:bg-amber-400 hover:text-black transition" title="Editar configuraciones y receta"><Edit2 size={16}/></button>
                       <button onClick={() => handleDeleteAroma(item.id)} className="p-2 bg-red-50 text-red-500 rounded-lg hover:bg-red-500 hover:text-white transition"><Trash2 size={16}/></button>
                     </div>
                   </td>
@@ -939,52 +925,4 @@ export default function App() {
       <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
         <h3 className="font-black mb-5 pb-3 border-b flex items-center text-gray-800"><ImagePlus className="mr-2 text-amber-500"/> Personalización de Marca</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
-          <div><label className="block text-xs font-bold uppercase mb-2 text-gray-500">Nombre del Negocio</label><input type="text" value={appName} onChange={e => setAppName(e.target.value)} className="w-full p-3.5 bg-gray-50 border rounded-lg font-black outline-none focus:ring-2 focus:ring-amber-400" /></div>
-          <div className="flex items-center gap-5">
-            <img src={appLogo} alt="Logo" className="w-24 h-24 rounded-2xl shadow-md border-2 p-1 bg-white object-cover" />
-            <div className="flex-1"><label className="block text-xs font-bold uppercase mb-2 text-gray-500">Subir Logo</label><input type="file" accept="image/*" onChange={handleLogoUpload} className="w-full text-xs font-black uppercase text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-amber-50 file:text-amber-700 hover:file:bg-amber-100" /></div>
-          </div>
-        </div>
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200"><h3 className="font-black mb-4 pb-3 border-b flex items-center text-gray-800"><Truck className="mr-2 text-amber-500"/> Logística Base</h3><div><label className="block text-xs font-bold uppercase mb-2 text-gray-500">Costo de Envío Global ($)</label><p className="text-[11px] text-gray-400 mb-3 font-medium">Se aplicará por defecto en tus ventas.</p><input type="number" step="0.01" value={prices.shipping} onChange={e => setPrices({...prices, shipping: parseFloat(e.target.value)||0})} className="w-full p-3.5 bg-gray-50 border rounded-lg font-black outline-none focus:ring-2 focus:ring-amber-400" /></div></div>
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200"><h3 className="font-black mb-4 pb-3 border-b flex items-center text-gray-800"><AlertTriangle className="mr-2 text-amber-500"/> Alertas</h3><div><label className="block text-xs font-bold uppercase mb-2 text-gray-500">Límite de Stock Bajo</label><p className="text-[11px] text-gray-400 mb-3 font-medium">Recibirás un aviso si algún producto llega a este límite.</p><input type="number" value={prices.lowStockThreshold} onChange={e => setPrices({...prices, lowStockThreshold: parseInt(e.target.value)||0})} className="w-full p-3.5 bg-gray-50 border rounded-lg font-black text-red-600 outline-none focus:ring-2 focus:ring-amber-400" /></div></div>
-      </div>
-      <div className="flex justify-end pt-4"><button onClick={handleSaveSettings} className="bg-black text-amber-400 px-8 py-4 rounded-xl font-black shadow-lg text-lg hover:bg-gray-900 transition"><Save className="inline mr-2"/> Confirmar Configuración</button></div>
-    </div>
-  );
-
-  return (
-    <div className="flex h-screen bg-gray-100 font-sans text-gray-800 overflow-hidden selection:bg-amber-400 selection:text-black">
-      {notification && <div className="fixed top-4 right-4 bg-black text-amber-400 px-6 py-4 rounded-xl shadow-2xl z-[70] flex items-center gap-3 font-bold"><Check size={20}/> {notification}</div>}
-      {errorMsg && <div className="fixed top-4 right-4 bg-red-600 text-white px-6 py-4 rounded-xl shadow-2xl z-[70] flex items-center gap-3 font-bold"><AlertTriangle size={20} /> {errorMsg}</div>}
-
-      <aside className="w-72 bg-white border-r border-gray-200 hidden md:flex flex-col z-10">
-        <div className="p-6 border-b border-gray-100 flex items-center gap-4 bg-gray-50/50"><img src={appLogo} alt="Logo" className="w-12 h-12 rounded-xl border bg-white p-0.5 object-cover" /><div className="flex-1 min-w-0"><h1 className="font-black text-lg truncate">{appName}</h1><span className="text-[10px] uppercase font-black text-amber-500 block">SaaS Dashboard</span></div></div>
-        <nav className="flex-1 overflow-y-auto p-4 space-y-2">{TABS.map(tab => (<button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`w-full flex items-center px-4 py-3.5 rounded-xl text-sm font-black transition-all ${activeTab === tab.id ? 'bg-black text-amber-400 shadow-lg' : 'text-gray-500 hover:bg-gray-100'}`}><tab.icon size={20} className={`mr-3 ${activeTab === tab.id ? 'text-amber-400' : 'text-gray-400'}`} />{tab.label}</button>))}</nav>
-        <div className="p-5 border-t bg-gray-50"><button onClick={handleLogout} className="w-full flex items-center justify-center px-4 py-3.5 rounded-xl text-sm font-black text-gray-600 bg-white border hover:bg-red-50 hover:text-red-600 transition"><LogOut size={18} className="mr-2" /> Cerrar Sesión</button></div>
-      </aside>
-
-      <main className="flex-1 flex flex-col overflow-hidden relative bg-gray-50">
-        <header className="bg-white border-b p-4 md:hidden flex justify-between items-center z-10"><div className="flex items-center gap-3"><img src={appLogo} alt="Logo" className="w-9 h-9 rounded-lg border p-0.5 object-cover" /><h1 className="font-black truncate">{appName}</h1></div><button onClick={handleLogout} className="text-gray-400"><LogOut size={22}/></button></header>
-        <div className="flex-1 overflow-y-auto p-4 md:p-8 pb-32 md:pb-8">
-          {activeTab === 'dashboard' && renderDashboard()}
-          {activeTab === 'pos' && renderPOS()}
-          {activeTab === 'inventory' && renderInventory()}
-          {activeTab === 'customers' && renderCustomers()}
-          {activeTab === 'history' && renderHistory()}
-          {activeTab === 'settings' && renderSettings()}
-        </div>
-      </main>
-
-      <nav className="md:hidden fixed bottom-0 left-0 w-full bg-white border-t border-gray-200 flex justify-between px-1 pt-2 pb-8 z-[100] shadow-[0_-4px_15px_rgba(0,0,0,0.08)]">
-        {TABS.map(tab => (
-          <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex-1 flex flex-col items-center justify-center p-1 rounded-lg transition-colors ${activeTab === tab.id ? 'text-black' : 'text-gray-400'}`}>
-            <tab.icon size={22} className={`mb-1 ${activeTab === tab.id ? 'text-amber-500' : ''}`} />
-            <span className={`text-[8px] sm:text-[9px] uppercase tracking-wider truncate w-full text-center ${activeTab === tab.id ? 'font-black' : 'font-bold'}`}>{tab.label}</span>
-          </button>
-        ))}
-      </nav>
-    </div>
-  );
-}
+          <div><label className="block text-xs font-bold uppercase mb-2 text-gray-500">Nombre del Negocio</label><input type="text" value={appName} onChange={e => setAppName(e.target.value)} class
