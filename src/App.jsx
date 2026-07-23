@@ -346,6 +346,7 @@ export default function App() {
 
     setSales(prev => [saleRecord, ...prev]);
 
+    // Lógica para descontar Stock físico y Fórmulas
     let totalAlcoholDeduction = 0;
     let totalFijadorDeduction = 0;
 
@@ -925,4 +926,52 @@ export default function App() {
       <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
         <h3 className="font-black mb-5 pb-3 border-b flex items-center text-gray-800"><ImagePlus className="mr-2 text-amber-500"/> Personalización de Marca</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
-          <div><label className="block text-xs font-bold uppercase mb-2 text-gray-500">Nombre del Negocio</label><input type="text" value={appName} onChange={e => setAppName(e.target.value)} class
+          <div><label className="block text-xs font-bold uppercase mb-2 text-gray-500">Nombre del Negocio</label><input type="text" value={appName} onChange={e => setAppName(e.target.value)} className="w-full p-3.5 bg-gray-50 border rounded-lg font-black outline-none focus:ring-2 focus:ring-amber-400" /></div>
+          <div className="flex items-center gap-5">
+            <img src={appLogo} alt="Logo" className="w-24 h-24 rounded-2xl shadow-md border-2 p-1 bg-white object-cover" />
+            <div className="flex-1"><label className="block text-xs font-bold uppercase mb-2 text-gray-500">Subir Logo</label><input type="file" accept="image/*" onChange={handleLogoUpload} className="w-full text-xs font-black uppercase text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-amber-50 file:text-amber-700 hover:file:bg-amber-100" /></div>
+          </div>
+        </div>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200"><h3 className="font-black mb-4 pb-3 border-b flex items-center text-gray-800"><Truck className="mr-2 text-amber-500"/> Logística Base</h3><div><label className="block text-xs font-bold uppercase mb-2 text-gray-500">Costo de Envío Global ($)</label><p className="text-[11px] text-gray-400 mb-3 font-medium">Se aplicará por defecto en tus ventas.</p><input type="number" step="0.01" value={prices.shipping} onChange={e => setPrices({...prices, shipping: parseFloat(e.target.value)||0})} className="w-full p-3.5 bg-gray-50 border rounded-lg font-black outline-none focus:ring-2 focus:ring-amber-400" /></div></div>
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200"><h3 className="font-black mb-4 pb-3 border-b flex items-center text-gray-800"><AlertTriangle className="mr-2 text-amber-500"/> Alertas</h3><div><label className="block text-xs font-bold uppercase mb-2 text-gray-500">Límite de Stock Bajo</label><p className="text-[11px] text-gray-400 mb-3 font-medium">Recibirás un aviso si algún producto llega a este límite.</p><input type="number" value={prices.lowStockThreshold} onChange={e => setPrices({...prices, lowStockThreshold: parseInt(e.target.value)||0})} className="w-full p-3.5 bg-gray-50 border rounded-lg font-black text-red-600 outline-none focus:ring-2 focus:ring-amber-400" /></div></div>
+      </div>
+      <div className="flex justify-end pt-4"><button onClick={handleSaveSettings} className="bg-black text-amber-400 px-8 py-4 rounded-xl font-black shadow-lg text-lg hover:bg-gray-900 transition"><Save className="inline mr-2"/> Confirmar Configuración</button></div>
+    </div>
+  );
+
+  return (
+    <div className="flex h-screen bg-gray-100 font-sans text-gray-800 overflow-hidden selection:bg-amber-400 selection:text-black">
+      {notification && <div className="fixed top-4 right-4 bg-black text-amber-400 px-6 py-4 rounded-xl shadow-2xl z-[70] flex items-center gap-3 font-bold"><Check size={20}/> {notification}</div>}
+      {errorMsg && <div className="fixed top-4 right-4 bg-red-600 text-white px-6 py-4 rounded-xl shadow-2xl z-[70] flex items-center gap-3 font-bold"><AlertTriangle size={20} /> {errorMsg}</div>}
+
+      <aside className="w-72 bg-white border-r border-gray-200 hidden md:flex flex-col z-10">
+        <div className="p-6 border-b border-gray-100 flex items-center gap-4 bg-gray-50/50"><img src={appLogo} alt="Logo" className="w-12 h-12 rounded-xl border bg-white p-0.5 object-cover" /><div className="flex-1 min-w-0"><h1 className="font-black text-lg truncate">{appName}</h1><span className="text-[10px] uppercase font-black text-amber-500 block">SaaS Dashboard</span></div></div>
+        <nav className="flex-1 overflow-y-auto p-4 space-y-2">{TABS.map(tab => (<button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`w-full flex items-center px-4 py-3.5 rounded-xl text-sm font-black transition-all ${activeTab === tab.id ? 'bg-black text-amber-400 shadow-lg' : 'text-gray-500 hover:bg-gray-100'}`}><tab.icon size={20} className={`mr-3 ${activeTab === tab.id ? 'text-amber-400' : 'text-gray-400'}`} />{tab.label}</button>))}</nav>
+        <div className="p-5 border-t bg-gray-50"><button onClick={handleLogout} className="w-full flex items-center justify-center px-4 py-3.5 rounded-xl text-sm font-black text-gray-600 bg-white border hover:bg-red-50 hover:text-red-600 transition"><LogOut size={18} className="mr-2" /> Cerrar Sesión</button></div>
+      </aside>
+
+      <main className="flex-1 flex flex-col overflow-hidden relative bg-gray-50">
+        <header className="bg-white border-b p-4 md:hidden flex justify-between items-center z-10"><div className="flex items-center gap-3"><img src={appLogo} alt="Logo" className="w-9 h-9 rounded-lg border p-0.5 object-cover" /><h1 className="font-black truncate">{appName}</h1></div><button onClick={handleLogout} className="text-gray-400"><LogOut size={22}/></button></header>
+        <div className="flex-1 overflow-y-auto p-4 md:p-8 pb-32 md:pb-8">
+          {activeTab === 'dashboard' && renderDashboard()}
+          {activeTab === 'pos' && renderPOS()}
+          {activeTab === 'inventory' && renderInventory()}
+          {activeTab === 'customers' && renderCustomers()}
+          {activeTab === 'history' && renderHistory()}
+          {activeTab === 'settings' && renderSettings()}
+        </div>
+      </main>
+
+      <nav className="md:hidden fixed bottom-0 left-0 w-full bg-white border-t border-gray-200 flex justify-between px-1 pt-2 pb-8 z-[100] shadow-[0_-4px_15px_rgba(0,0,0,0.08)]">
+        {TABS.map(tab => (
+          <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex-1 flex flex-col items-center justify-center p-1 rounded-lg transition-colors ${activeTab === tab.id ? 'text-black' : 'text-gray-400'}`}>
+            <tab.icon size={22} className={`mb-1 ${activeTab === tab.id ? 'text-amber-500' : ''}`} />
+            <span className={`text-[8px] sm:text-[9px] uppercase tracking-wider truncate w-full text-center ${activeTab === tab.id ? 'font-black' : 'font-bold'}`}>{tab.label}</span>
+          </button>
+        ))}
+      </nav>
+    </div>
+  );
+}
